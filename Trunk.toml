@@ -1,0 +1,12 @@
+[[hooks]]
+stage = "pre_build"
+command = "sh"
+command_arguments = ["-c", "clear"]
+
+[[hooks]]
+stage = "pre_build"
+command = "sh"
+command_arguments = ["-c", "cd node && npm install"]
+
+[watch]
+watch = ["src", "Cargo.toml","index.html","node/package.json","Trunk.toml","../patternfly-yew"]
