@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 yew = { version = "0.20.0", features = ["csr"] }
-patternfly-yew = { version = "0.4.0-alpha.1", features = ["icons-fab"], path="../patternfly-yew" }
+patternfly-yew = { version = "0.4.0-alpha.3", git="https://github.com/koa/patternfly-yew" }
 strum = "0.24"
 strum_macros = "0.24"
 log = "0.4"

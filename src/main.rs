@@ -1,12 +1,13 @@
-use std::f64::consts::PI;
-use std::fmt::{Display, Formatter};
-use std::ops::Range;
+use std::{
+    f64::consts::PI,
+    fmt::{Display, Formatter},
+    ops::Range,
+};
 
-use patternfly_yew::FormGroup;
-use patternfly_yew::Slider;
-use patternfly_yew::Text;
-use patternfly_yew::TextInput;
-use patternfly_yew::{Card, ChipVariant, InputState, Page, Select, SelectOption, SelectVariant};
+use patternfly_yew::{
+    Card, ChipVariant, Content, FormGroup, InputState, Page, Select, SelectOption, SelectVariant,
+    Slider, TextInput,
+};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use yew::{function_component, html, html_nested, use_state, Callback, Html};
@@ -295,15 +296,15 @@ fn App() -> Html {
         InputState::Default
     };
     let result = if !(state.diameter_error() || state.flute_count_error()) {
-        let min_value = format!("{:.0}", result.start);
-        let max_value = format!("{:.0}", result.end);
+        let min_value = format!("{:.0} mm/min", result.start);
+        let max_value = format!("{:.0} mm/min", result.end);
         html! {
             <>
                 <FormGroup label="Minimaler Vorschub">
-                    <Text>{min_value}</Text>
+                    <Content>{min_value}</Content>
                 </FormGroup>
                 <FormGroup label="Maximaler Vorschub">
-                    <Text>{max_value}</Text>
+                    <Content>{max_value}</Content>
                 </FormGroup>
             </>
         }
@@ -342,6 +343,8 @@ fn App() -> Html {
 }
 #[cfg(debug_assertions)]
 const LOG_LEVEL: log::Level = log::Level::Trace;
+#[cfg(not(debug_assertions))]
+const LOG_LEVEL: log::Level = log::Level::Warn;
 fn main() {
     wasm_logger::init(wasm_logger::Config::new(LOG_LEVEL));
     yew::Renderer::<App>::new().render();
