@@ -4,9 +4,10 @@ use std::{
     ops::Range,
 };
 
+use patternfly_yew::Alert;
 use patternfly_yew::{
-    Card, ChipVariant, Content, FormGroup, InputState, Page, Select, SelectOption, SelectVariant,
-    Slider, TextInput,
+    Card, ChipVariant, FormGroup, InputState, Select, SelectOption, SelectVariant, Slider, Step,
+    TextInput, Type,
 };
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
@@ -19,6 +20,7 @@ enum Material {
     Copper,
     WoodSoft,
     WoodHard,
+    WoodMdf,
 }
 
 impl Material {
@@ -29,6 +31,7 @@ impl Material {
             Material::Copper => 80.0..200.0,
             Material::WoodSoft => 300.0..600.0,
             Material::WoodHard => 200.0..450.0,
+            Material::WoodMdf => 200.0..450.0,
         }
     }
     pub fn feed_table(&self) -> &[(f64, Range<f64>)] {
@@ -68,6 +71,13 @@ impl Material {
                 (10.0, 0.045..0.08),
                 (12.0, 0.05..0.09),
             ],
+            Material::WoodMdf => &[
+                (4.0, 0.022..0.044),
+                (6.0, 0.0275..0.0605),
+                (8.0, 0.0407..0.077),
+                (10.0, 0.0495..0.0935),
+                (12.0, 0.055..0.105),
+            ],
         }
     }
 }
@@ -86,7 +96,7 @@ fn feed_per_flute(material: Material, diameter: f64) -> Range<f64> {
         }
         if entry.0 > diameter {
             // something in between -> interpolate
-            let left_weight = (entry.0 - last_entry.0) as f64 / (diameter - last_entry.0) as f64;
+            let left_weight = (entry.0 - last_entry.0) / (diameter - last_entry.0);
             let right_weight = 1.0 - left_weight;
             let min_value = last_entry.1.start * left_weight + entry.1.start * right_weight;
             let max_value = last_entry.1.end * left_weight + entry.1.end * right_weight;
@@ -104,6 +114,7 @@ impl Display for Material {
             Material::Copper => f.write_str("Kupfer / Messing"),
             Material::WoodSoft => f.write_str("Holz weich"),
             Material::WoodHard => f.write_str("Holz hart"),
+            Material::WoodMdf => f.write_str("Holz MDF"),
         }
     }
 }
@@ -141,8 +152,6 @@ impl GlobalState {
 
     pub fn set_material(&mut self, material: Material) {
         self.material = material;
-        let range = self.rpm_range();
-        self.selected_rpm = self.selected_rpm.clamp(range.start, range.end);
     }
     pub fn rpm_range(&self) -> Range<f64> {
         let diameter = self.diameter;
@@ -150,7 +159,11 @@ impl GlobalState {
         let rpm_min = vc_range.start * 1000.0 / (diameter * PI);
         let rpm_max = vc_range.end * 1000.0 / (diameter * PI);
 
-        rpm_min.clamp(self.min_rpm, self.max_rpm)..rpm_max.clamp(self.min_rpm, self.max_rpm)
+        rpm_min..rpm_max
+    }
+
+    pub fn cut_speed(&self) -> f64 {
+        self.diameter * PI * self.selected_rpm / 1000.0
     }
 
     pub fn feed_range(&self) -> Range<f64> {
@@ -176,8 +189,6 @@ impl GlobalState {
 
     pub fn set_diameter(&mut self, diameter: f64) {
         self.diameter = diameter;
-        let rpm_range = self.rpm_range();
-        self.selected_rpm = self.selected_rpm.clamp(rpm_range.start, rpm_range.end);
     }
     pub fn set_flute_count(&mut self, flute_count: u8) {
         self.flute_count = flute_count;
@@ -210,8 +221,6 @@ impl GlobalState {
 #[function_component]
 fn App() -> Html {
     let state = use_state(GlobalState::default);
-
-    let rpm_range = state.rpm_range();
 
     let on_change_material: Callback<Material> = {
         let state = state.clone();
@@ -275,13 +284,33 @@ fn App() -> Html {
         })
     };
 
-    let nav = html!("Vorschub und Drehzahl");
+    let rpm_range = state.rpm_range();
+    let min_machine_rpm = Step {
+        value: state.min_rpm(),
+        label: Some(Default::default()),
+    };
+    let max_machine_rpm = Step {
+        value: state.max_rpm(),
+        label: Some(Default::default()),
+    };
+    let ticks = vec![
+        Step {
+            value: rpm_range.start,
+            label: None,
+        },
+        Step {
+            value: rpm_range.end,
+            label: None,
+        },
+    ];
+
     let material_list = Material::iter()
         .map(|value| html_nested! {<SelectOption<Material> {value}/>})
         .collect::<Vec<_>>();
     let variant = SelectVariant::Single(on_change_material);
     let chip = ChipVariant::Values;
-    let slide_pos = Some(state.selected_rpm()).filter(|v| !v.is_nan());
+    let selected_rpm = state.selected_rpm();
+    let slide_pos = Some(selected_rpm).filter(|v| !v.is_nan());
     let diameter_str = format!("{:.2}", state.diameter());
     let result = state.feed_range();
     let diameter_input_state = if state.diameter_error() {
@@ -295,50 +324,86 @@ fn App() -> Html {
     } else {
         InputState::Default
     };
+    let rpm_result = if selected_rpm < rpm_range.start {
+        html! {
+          <Alert title={"Drehzahl zu niedrig"}  r#type={Type::Warning}/>
+        }
+    } else if selected_rpm > rpm_range.end {
+        html! {
+          <Alert title={"Drehzahl zu hoch"}  r#type={Type::Warning}/>
+        }
+    } else {
+        html!()
+    };
     let result = if !(state.diameter_error() || state.flute_count_error()) {
-        let min_value = format!("{:.0} mm/min", result.start);
-        let max_value = format!("{:.0} mm/min", result.end);
         html! {
             <>
-                <FormGroup label="Minimaler Vorschub">
-                    <Content>{min_value}</Content>
-                </FormGroup>
-                <FormGroup label="Maximaler Vorschub">
-                    <Content>{max_value}</Content>
+                <FormGroup label="Vorschub">
+                  <dl>
+                    <dt>{"Min"}</dt>
+                    <dd class="value">{{format!("{:.0}", result.start)}}</dd>
+                    <dd class="unit">{"mm/min"}</dd>
+                    <dt>{"Max"}</dt>
+                    <dd class="value">{{format!("{:.0}", result.end)}}</dd>
+                    <dd class="unit">{"mm/min"}</dd>
+                  </dl>
                 </FormGroup>
             </>
         }
     } else {
         html!()
     };
+    let Range {
+        start: vc_min,
+        end: vc_max,
+    } = state.material().cut_speed();
+    let Range {
+        start: zf_min,
+        end: zf_max,
+    } = feed_per_flute(*state.material(), state.diameter());
     html! {
-        <Page {nav}>
-            <section class="pf-c-page__main-section pf-m-limit-width pf-m-align-center">
                 <Card>
                     <FormGroup label="Material">
                         <Select<Material> {variant} {chip} placeholder={state.material().to_string()}>
                             {material_list}
                         </Select<Material>>
+                      <dl>
+                        <dt>{"Schnittgeschwindigkeit"}</dt>
+                        <dd class="value">{{format!("{vc_min:.0}-{vc_max:.0}")}}</dd>
+                        <dd class="unit">{"m/min"}</dd>
+                      </dl>
                     </FormGroup>
                     <FormGroup label="Werkzeugdurchmesser">
                         <TextInput r#type="number" value={diameter_str} onchange={on_change_diameter} state={diameter_input_state}/>
+                      <dl>
+                        <dt>{"Zahnvorschub"}</dt>
+                        <dd class="value">{{format!("{zf_min:.3}-{zf_max:.3}")}}</dd>
+                        <dd class="unit">{"mm"}</dd>
+                      </dl>
+                    </FormGroup>
+                    <FormGroup label="Drehzahl">
+                      <dl>
+                        <dt>{"Min"}</dt>
+                        <dd class="value">{{format!("{:.0}",rpm_range.start)}}</dd>
+                        <dd class="unit">{"U/min"}</dd>
+                        <dt>{"Max"}</dt>
+                        <dd class="value">{{format!("{:.0}",rpm_range.end)}}</dd>
+                        <dd class="unit">{"U/min"}</dd>
+                        <Slider min={min_machine_rpm} max={max_machine_rpm} {ticks} hide_labels={false} value={slide_pos} onchange={on_change_rpm} suppress_initial_change={true} label_precision={0}/>
+                        <dt>{"Gewählt"}</dt>
+                        <dd class="value">{{format!("{selected_rpm:.0}")}}</dd>
+                        <dd class="unit">{"U/min"}</dd>
+                        <dt>{"Schnittgeschwindigkeit"}</dt>
+                        <dd class="value">{{format!("{:.0}",state.cut_speed())}}</dd>
+                        <dd class="unit">{"m/min"}</dd>
+                        {rpm_result}
+                      </dl>
                     </FormGroup>
                     <FormGroup label="Anzahl Schneiden">
                         <TextInput r#type="number" value={flute_count_str} onchange={on_change_flute_count} state={flute_count_input_state}/>
                     </FormGroup>
-                    <FormGroup label="Drehzahl">
-                    <div style="width: 20em"><strong>{"RPM: "}</strong>{format!("{:.0}",state.selected_rpm())} </div>
-                    { if rpm_range.start < rpm_range.end {
-                        html!{<Slider min={rpm_range.start} max={rpm_range.end} hide_labels={false} value={slide_pos} onchange={on_change_rpm} suppress_initial_change={true} label_precision={0}/>}
-                    }else{
-                        html!()
-                    }
-                    }
-                    </FormGroup>
                     {result}
                 </Card>
-            </section>
-        </Page>
     }
 }
 #[cfg(debug_assertions)]
